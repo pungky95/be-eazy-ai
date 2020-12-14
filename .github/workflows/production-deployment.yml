@@ -36,6 +36,6 @@ jobs:
           --platform managed \
           --allow-unauthenticated \
           --project ${{ secrets.GCP_PROJECT_ID }} \
-          --memory 2G
+          --memory 512M
 
 
