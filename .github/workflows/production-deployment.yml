@@ -21,17 +21,17 @@ jobs:
       - name: Configure Docker
         run: |
           gcloud auth configure-docker
-      - name: Build
+      - name: Build From Docker File
         run: |
           docker build -t gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }}:latest .
-      - name: Push
+      - name: Push to Google Cloud Repository
         run: |
-          docker push gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }}:latest
+          docker push asia.gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }}:latest
       - name: Deploy
         run: |
           gcloud run deploy ${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }} \
           --region asia-southeast1 \
-          --image gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }} \
+          --image asia.gcr.io/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.REPOSITORY_NAME}}-${{ secrets.ENV_PRODUCTION }} \
           --platform managed \
           --allow-unauthenticated \
           --project ${{ secrets.GCP_PROJECT_ID }} \
