@@ -1,0 +1,134 @@
+### TEMPLATE ###
+
+stages:
+  - build
+  - deploy
+  - cleanup-deploy-review
+
+.template: &tpl-build-publish-image
+  image: docker:latest
+  variables:
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_HOST: tcp://docker:2375
+  services:
+    - docker:dind
+  stage: build
+  when: on_success
+  script:
+    - docker build -f Dockerfile -t asia.gcr.io/$GCP_PROJECT_ID/be-eazy-ai:$(echo $CI_COMMIT_SHA | cut -c1-8) .
+    - cat $GCP_SERVICE_KEY | docker login -u _json_key --password-stdin https://asia.gcr.io
+    - docker push asia.gcr.io/$GCP_PROJECT_ID/be-eazy-ai:$(echo $CI_COMMIT_SHA | cut -c1-8)
+
+.template: &tpl-deploy
+  image: google/cloud-sdk:latest
+  stage: deploy
+  script:
+    - gcloud auth activate-service-account --key-file $GCP_SERVICE_KEY
+    - echo https://console.cloud.google.com/run/detail/$GCP_REGION_NAME/be-eazy-ai-$CI_MERGE_REQUEST_IID/logs?project=$GCP_PROJECT_ID
+    - gcloud run deploy $INSTANCE_NAME
+      --image asia.gcr.io/$GCP_PROJECT_ID/be-eazy-ai:$(echo $CI_COMMIT_SHA | cut -c1-8)
+      --region $GCP_REGION_NAME
+      --platform managed
+      --allow-unauthenticated
+      --memory 512M
+      --project $GCP_PROJECT_ID
+    - REVIEW_URL=$(gcloud run services describe $INSTANCE_NAME
+      --platform managed
+      --project $GCP_PROJECT_ID
+      --region $GCP_REGION_NAME | grep 'https' | head -1 | tr ' ' '\n' | grep https)
+    - echo $REVIEW_URL
+
+### END OF TEMPLATE ###
+
+### STAGE BUILD ###
+
+be-eazy-ai:build-publish-image:review:
+  <<: *tpl-build-publish-image
+  environment:
+    name: review/be-eazy-ai-$CI_MERGE_REQUEST_IID
+  only:
+    refs:
+      - merge_requests
+
+be-eazy-ai:build-publish-image:staging:
+  <<: *tpl-build-publish-image
+  environment:
+    name: staging
+  only:
+    refs:
+      - staging
+
+be-eazy-ai:build-publish-image:production:
+  <<: *tpl-build-publish-image
+  environment:
+    name: production
+  only:
+    refs:
+      - master
+
+### END OF STAGE BUILD ###
+
+
+### STAGE DEPLOY ###
+
+be-eazy-ai:deploy:review:
+  <<: *tpl-deploy
+  only:
+    refs:
+      - merge_requests
+  environment:
+    name: review/be-eazy-ai-$CI_MERGE_REQUEST_IID
+    on_stop: be-eazy-ai:stop:review
+    auto_stop_in: 2 days
+  variables:
+    INSTANCE_NAME: be-eazy-ai-$CI_MERGE_REQUEST_IID
+
+be-eazy-ai:deploy:staging:
+  <<: *tpl-deploy
+  only:
+    refs:
+      - staging
+  environment:
+    name: staging
+  variables:
+    INSTANCE_NAME: be-eazy-ai-$APP_ENV
+
+be-eazy-ai:deploy:production:
+  <<: *tpl-deploy
+  only:
+    refs:
+      - master
+  environment:
+    name: production
+  variables:
+    INSTANCE_NAME: be-eazy-ai-$APP_ENV
+
+### END OF STAGE DEPLOY ###
+
+
+### STAGE CLEANUP DEPLOY REVIEW ###
+
+be-eazy-ai:stop:review:
+  image: google/cloud-sdk:latest
+  variables:
+    GIT_STRATEGY: none
+  stage: cleanup-deploy-review
+  when: manual
+  only:
+    refs:
+      - merge_requests
+  environment:
+    name: review/be-eazy-ai-$CI_MERGE_REQUEST_IID
+    action: stop
+  variables:
+    INSTANCE_NAME: be-eazy-ai-$CI_MERGE_REQUEST_IID
+  script:
+    - gcloud auth activate-service-account --key-file $GCP_SERVICE_KEY
+    - gcloud run services delete $INSTANCE_NAME
+      --platform managed
+      --project $GCP_PROJECT_ID
+      --region $GCP_REGION_NAME
+      --quiet
+
+### END OF STAGE CLEANUP DEPLOY REVIEW ###
